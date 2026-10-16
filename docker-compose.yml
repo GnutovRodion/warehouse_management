@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: wh-postgres
+    environment:
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: warehouse
+      POSTGRES_DB: warehouse
+    ports:
+      - "5435:5432" # изменить на 5432
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warehouse -d warehouse"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: wh-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: wh-api
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m inventory_api"
+    environment:
+      DATABASE_URL_SYNC: postgresql+psycopg2://warehouse:warehouse@postgres:5432/warehouse
+      DATABASE_URL_ASYNC: postgresql+asyncpg://warehouse:warehouse@postgres:5432/warehouse
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app 
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: wh-worker
+    command: python -m analytics_worker
+    environment:
+      DATABASE_URL_ASYNC: postgresql+asyncpg://warehouse:warehouse@postgres:5432/warehouse
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+volumes:
+  pg_data:

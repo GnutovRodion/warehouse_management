@@ -1,0 +1,10 @@
+[flake8]
+
+exclude =
+    __pycache__,
+    .git,
+    alembic/versions,
+    .venv,
+
+# max line width setting
+max-line-length = 120
